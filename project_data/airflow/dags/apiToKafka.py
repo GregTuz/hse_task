@@ -1,3 +1,4 @@
+import base64
 import sys
 import datetime
 import logging
@@ -5,7 +6,7 @@ import requests
 from airflow import DAG
 from airflow.operators.python import PythonOperator
 from pymongo import MongoClient
-from kafka import KafkaProducer
+from confluent_kafka import Producer
 import fastavro
 from io import BytesIO
 
@@ -34,7 +35,6 @@ def fetch_data(**kwargs):
 	kwargs['ti'].xcom_push(key='user_data', value=data)
 	logger.info(f"Fetched {len(data)} users from API.")
 
-
 def save_to_mongo(**kwargs):
 	client = MongoClient("mongodb://mongo_user:mongo_password@mongo:27017/")
 	db = client['hse_task_mongo']
@@ -44,7 +44,6 @@ def save_to_mongo(**kwargs):
 	if data:
 		collection.insert_many(data)
 		logger.info("Data successfully written to users in hse_task_mongo")
-
 
 def process_location_data(**kwargs):
 	ti = kwargs['ti']
@@ -58,7 +57,6 @@ def process_location_data(**kwargs):
 
 	kwargs['ti'].xcom_push(key='location_data', value=location_data)
 	logger.info(f"Processed location data for {len(location_data)} users.")
-
 
 def process_user_data(**kwargs):
 	ti = kwargs['ti']
@@ -86,30 +84,27 @@ def process_user_data(**kwargs):
 	for record in user_data:
 		bytes_writer = BytesIO()
 		fastavro.writer(bytes_writer, avro_schema, [record])
-		avro_data.append(bytes_writer.getvalue())
+		avro_bytes = bytes_writer.getvalue()
+
+		avro_data.append(base64.b64encode(avro_bytes).decode('utf-8'))
 
 	kwargs['ti'].xcom_push(key='avro_data', value=avro_data)
 	logger.info(f"Processed {len(user_data)} users for Avro.")
 
-
 def send_to_kafka(**kwargs):
-	producer = KafkaProducer(
-		bootstrap_servers='kafka:9092',
-		value_serializer=lambda v: v
-	)
+	producer = Producer({'bootstrap.servers': 'kafka:9092'})
 
 	ti = kwargs['ti']
 	avro_data = ti.xcom_pull(task_ids='process_user_data', key='avro_data')
 
 	if avro_data:
 		for record in avro_data:
-			producer.send('user_data_avro_topic', record)
+			producer.produce('user_data_avro_topic', value=record)
 		producer.flush()
 		logger.info(f"Sent {len(avro_data)} Avro records to Kafka topic 'user_data_avro_topic'.")
 
-
 with DAG(
-		'Process api',
+		'Process_api',
 		default_args={
 			'owner': 'admin',
 			'depends_on_past': False,

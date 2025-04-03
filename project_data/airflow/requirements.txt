@@ -1,4 +1,5 @@
 pyspark
 requests
 pymongo
-kafka
+confluent-kafka
+fastavro

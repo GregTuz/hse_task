@@ -35,6 +35,7 @@ def fetch_data(**kwargs):
 	kwargs['ti'].xcom_push(key='user_data', value=data)
 	logger.info(f"Fetched {len(data)} users from API.")
 
+
 def save_to_mongo(**kwargs):
 	client = MongoClient("mongodb://mongo_user:mongo_password@mongo:27017/")
 	db = client['hse_task_mongo']
@@ -44,6 +45,7 @@ def save_to_mongo(**kwargs):
 	if data:
 		collection.insert_many(data)
 		logger.info("Data successfully written to users in hse_task_mongo")
+
 
 def process_location_data(**kwargs):
 	ti = kwargs['ti']
@@ -57,6 +59,7 @@ def process_location_data(**kwargs):
 
 	kwargs['ti'].xcom_push(key='location_data', value=location_data)
 	logger.info(f"Processed location data for {len(location_data)} users.")
+
 
 def process_user_data(**kwargs):
 	ti = kwargs['ti']
@@ -91,8 +94,9 @@ def process_user_data(**kwargs):
 	kwargs['ti'].xcom_push(key='avro_data', value=avro_data)
 	logger.info(f"Processed {len(user_data)} users for Avro.")
 
+
 def send_to_kafka(**kwargs):
-	producer = Producer({'bootstrap.servers': 'kafka:9092'})
+	producer = Producer({'bootstrap.servers': 'broker:9092'})
 
 	ti = kwargs['ti']
 	avro_data = ti.xcom_pull(task_ids='process_user_data', key='avro_data')
@@ -102,6 +106,7 @@ def send_to_kafka(**kwargs):
 			producer.produce('user_data_avro_topic', value=record)
 		producer.flush()
 		logger.info(f"Sent {len(avro_data)} Avro records to Kafka topic 'user_data_avro_topic'.")
+
 
 with DAG(
 		'Process_api',
